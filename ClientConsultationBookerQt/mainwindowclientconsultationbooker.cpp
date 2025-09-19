@@ -32,7 +32,7 @@ MainWindowClientConsultationBooker::MainWindowClientConsultationBooker(QWidget *
     int columnWidths[] = {40, 150, 200, 150, 100};
     for (int col = 0; col < 5; ++col)
         ui->tableWidgetConsultations->setColumnWidth(col, columnWidths[col]);
-    if (connectToServer()){
+    if (connectToServer()) {
         // Charger les spécialités au démarrage
         loadSpecialties();
         // Charger tous les médecins (sans filtre de spécialité)
@@ -107,7 +107,9 @@ void MainWindowClientConsultationBooker::clearTableConsultations() {
 int MainWindowClientConsultationBooker::getSelectionIndexTableConsultations() const
 {
     QModelIndexList list = ui->tableWidgetConsultations->selectionModel()->selectedRows();
-    if (list.size() == 0) return -1;
+    if (list.size() == 0) {
+        return -1;
+    }
     QModelIndex index = list.at(0);
     int ind = index.row();
     return ind;
@@ -174,7 +176,9 @@ void MainWindowClientConsultationBooker::setFirstName(string value) {
 }
 
 void MainWindowClientConsultationBooker::setPatientId(int value) {
-    if (value > 0) ui->spinBoxId->setValue(value);
+    if (value > 0) {
+        ui->spinBoxId->setValue(value);
+    }
 }
 
 bool MainWindowClientConsultationBooker::isNewPatientSelected() const {
@@ -187,12 +191,16 @@ void MainWindowClientConsultationBooker::setNewPatientChecked(bool state) {
 
 void MainWindowClientConsultationBooker::setStartDate(string date) {
     QDate qdate = QDate::fromString(QString::fromStdString(date), "yyyy-MM-dd");
-    if (qdate.isValid()) ui->dateEditStartDate->setDate(qdate);
+    if (qdate.isValid()) {
+        ui->dateEditStartDate->setDate(qdate);
+    }
 }
 
 void MainWindowClientConsultationBooker::setEndDate(string date) {
     QDate qdate = QDate::fromString(QString::fromStdString(date), "yyyy-MM-dd");
-    if (qdate.isValid()) ui->dateEditEndDate->setDate(qdate);
+    if (qdate.isValid()) {
+        ui->dateEditEndDate->setDate(qdate);
+    }
 }
 
 void MainWindowClientConsultationBooker::loginOk() {
@@ -263,7 +271,7 @@ void MainWindowClientConsultationBooker::on_pushButtonLogin_clicked()
     cout << "patientId = " << patientId << endl;
     cout << "newPatient = " << newPatient << endl;
 
-    if ((lastName == "") || (firstName == "")){
+    if ((lastName == "") || (firstName == "")) {
         dialogError("Login", "Le nom et le prénom doivent être renseignés");
         return;
     }

@@ -35,5 +35,10 @@ const char* INSERT = "INSERT";
 const char* ALREADY_BOOKED = "ALREADY_BOOKED";
 const char* UPDATE_FAILED = "UPDATE_FAILED";
 
-
+// Messages de configuration
 const char* DB_HOST = "DB_HOST";
+const char* DB_USER = "DB_USER";
+const char* DB_PASS = "DB_PASS";
+const char* DB_NAME = "DB_NAME";
+const char* PORT_RESERVATION = "PORT_RESERVATION";
+const char* NB_THREADS = "NB_THREADS";

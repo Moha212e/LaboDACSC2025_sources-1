@@ -1,0 +1,18 @@
+# Configuration du serveur Réservation
+# Port d'écoute du serveur
+PORT_RESERVATION=8080
+
+# Nombre de threads dans le pool
+THREAD_POOL_SIZE=10
+
+# Configuration de la base de données MySQL
+DB_HOST=localhost
+DB_USER=Student
+DB_PASSWORD=PassStudent1_
+DB_NAME=PourStudent
+
+# Port pour le client administrateur Java (pour la partie 2)
+PORT_ADMIN=8081
+
+# Timeout pour les connexions (en secondes)
+CONNECTION_TIMEOUT=300
