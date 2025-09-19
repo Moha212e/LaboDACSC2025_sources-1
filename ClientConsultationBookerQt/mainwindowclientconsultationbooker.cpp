@@ -3,7 +3,11 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <iostream>
+#include "../util/name.h"
 using namespace std;
+
+static const char *SERVER_IP = "127.0.0.1";
+static const int SERVER_PORT = 12345;
 
 MainWindowClientConsultationBooker::MainWindowClientConsultationBooker(QWidget *parent)
     : QMainWindow(parent)
@@ -28,23 +32,24 @@ MainWindowClientConsultationBooker::MainWindowClientConsultationBooker(QWidget *
     int columnWidths[] = {40, 150, 200, 150, 100};
     for (int col = 0; col < 5; ++col)
         ui->tableWidgetConsultations->setColumnWidth(col, columnWidths[col]);
-
-    // Exemples d'utilisation (à supprimer)
-    this->addTupleTableConsultations(1,"Neurologie","Martin Claire","2025-10-01", "09:00");
-    this->addTupleTableConsultations(2,"Cardiologie","Lemoine Bernard","2025-10-06", "10:15");
-    this->addTupleTableConsultations(3,"Dermatologie","Maboul Paul","2025-10-23", "14:30");
-
-    //this->addComboBoxSpecialties("--- TOUTES ---");
-    this->addComboBoxSpecialties("Dermatologie");
-    this->addComboBoxSpecialties("Cardiologie");
-
-    //this->addComboBoxDoctors("--- TOUS ---");
-    this->addComboBoxDoctors("Martin Claire");
-    this->addComboBoxDoctors("Maboul Paul");
+    if (connectToServer()){
+        // Charger les spécialités au démarrage
+        loadSpecialties();
+        // Charger tous les médecins (sans filtre de spécialité)
+        loadAllDoctors();
+    } else {
+        dialogError("Connexion", "Échec de la connexion au serveur");
+    }
 }
 
 MainWindowClientConsultationBooker::~MainWindowClientConsultationBooker()
 {
+    if (C_connectToServer && C_clientSocket >= 0){
+        printf("Fermeture de la connexion au serveur dans le destructeur\n");
+        closeSocket(C_clientSocket);
+        C_clientSocket = -1;
+        C_connectToServer = false;
+    }
     delete ui;
 }
 
@@ -258,11 +263,44 @@ void MainWindowClientConsultationBooker::on_pushButtonLogin_clicked()
     cout << "patientId = " << patientId << endl;
     cout << "newPatient = " << newPatient << endl;
 
-    loginOk();
+    if ((lastName == "") || (firstName == "")){
+        dialogError("Login", "Le nom et le prénom doivent être renseignés");
+        return;
+    }
+    
+    // Vérifier la connexion au serveur
+    if (!connectToServer()) {
+        return;
+    }
+    
+    string message;
+    if (newPatient) {
+        // Nouveau patient
+        message = string(LOGIN_NEW) + lastName + ";" + firstName;
+    } else {
+        // Patient existant
+        message = string(LOGIN_EXIST) + to_string(patientId) + ";" + lastName + ";" + firstName;
+    }
+    
+    // Envoyer la requête
+    if (sendToServer(message)) {
+        // Recevoir la réponse
+        string response = receiveFromServer();
+        if (!response.empty()) {
+            handleLoginResponse(response);
+        }
+    }
 }
 
 void MainWindowClientConsultationBooker::on_pushButtonLogout_clicked()
 {
+    // Fermer la connexion au serveur
+    if (C_connectToServer && C_clientSocket >= 0) {
+        closeSocket(C_clientSocket);
+        C_clientSocket = -1;
+        C_connectToServer = false;
+        printf("Connexion au serveur fermée\n");
+    }
     logoutOk();
 }
 
@@ -277,11 +315,323 @@ void MainWindowClientConsultationBooker::on_pushButtonRechercher_clicked()
     cout << "doctor = " << doctor << endl;
     cout << "startDate = " << startDate << endl;
     cout << "endDate = " << endDate << endl;
+    
+    // Vérifier la connexion au serveur
+    if (!connectToServer()) {
+        return;
+    }
+    
+    // Construire le message de recherche
+    string message = string(SEARCH) + specialty + ";" + doctor + ";" + startDate + ";" + endDate;
+    
+    // Envoyer la requête
+    if (sendToServer(message)) {
+        // Recevoir la réponse
+        string response = receiveFromServer();
+        if (!response.empty()) {
+            handleSearchResponse(response);
+        }
+    }
 }
 
 void MainWindowClientConsultationBooker::on_pushButtonReserver_clicked()
 {
-    int selectedTow = this->getSelectionIndexTableConsultations();
+    int selectedRow = this->getSelectionIndexTableConsultations();
 
-    cout << "selectedRow = " << selectedTow << endl;
+    cout << "selectedRow = " << selectedRow << endl;
+    
+    if (selectedRow < 0) {
+        dialogError("Réservation", "Veuillez sélectionner une consultation à réserver");
+        return;
+    }
+    
+    // Récupérer l'ID de la consultation sélectionnée
+    QTableWidgetItem *item = ui->tableWidgetConsultations->item(selectedRow, 0);
+    if (!item) {
+        dialogError("Réservation", "Erreur lors de la récupération de la consultation");
+        return;
+    }
+    
+    int consultationId = item->text().toInt();
+    cout << "Consultation ID sélectionnée: " << consultationId << endl;
+    
+    // Demander la raison de la consultation
+    string reason = dialogInputText("Réservation", "Veuillez indiquer la raison de votre consultation:");
+    if (reason.empty()) {
+        dialogError("Réservation", "La raison de la consultation est obligatoire");
+        return;
+    }
+    
+    // Effectuer la réservation
+    bookConsultation(consultationId, reason);
+}
+bool MainWindowClientConsultationBooker::connectToServer()
+{
+    if (C_connectToServer){
+        return true;
+    }
+    C_clientSocket = ClientSocket(SERVER_IP, SERVER_PORT);
+    if (C_clientSocket < 0)
+    {
+        dialogError("Connexion", "Impossible de se connecter au serveur");
+        return false;
+    }
+    C_connectToServer = true;
+    return true;
+}
+
+bool MainWindowClientConsultationBooker::sendToServer(const string& message)
+{
+    if (!C_connectToServer || C_clientSocket < 0) {
+        dialogError("Erreur", "Pas de connexion au serveur");
+        return false;
+    }
+    
+    int result = Send(C_clientSocket, message.c_str(), message.length());
+    if (result < 0) {
+        dialogError("Erreur", "Impossible d'envoyer le message au serveur");
+        return false;
+    }
+    printf("Message envoyé: %s\n", message.c_str());
+    return true;
+}
+
+string MainWindowClientConsultationBooker::receiveFromServer()
+{
+    if (!C_connectToServer || C_clientSocket < 0) {
+        return "";
+    }
+    
+    char buffer[1024];
+    int result = Receive(C_clientSocket, buffer);
+    if (result <= 0) {
+        dialogError("Erreur", "Impossible de recevoir la réponse du serveur");
+        return "";
+    }
+    
+    buffer[result] = '\0';
+    string response(buffer);
+    printf("Message reçu: %s\n", response.c_str());
+    return response;
+}
+
+bool MainWindowClientConsultationBooker::handleLoginResponse(const string& response)
+{
+    if (response.find(LOGIN_OK) == 0) {
+        // Extraire l'ID du patient
+        size_t pos = response.find(';');
+        if (pos != string::npos) {
+            string idStr = response.substr(pos + 1);
+            int patientId = stoi(idStr);
+            setPatientId(patientId);
+            loginOk();
+            dialogMessage("Login", "Connexion réussie ! ID patient: " + idStr);
+            return true;
+        }
+    } else if (response.find(LOGIN_FAIL) == 0) {
+        // Extraire la raison de l'échec
+        size_t pos = response.find(';');
+        if (pos != string::npos) {
+            string reason = response.substr(pos + 1);
+            dialogError("Erreur Login", "Échec de la connexion: " + reason);
+        } else {
+            dialogError("Erreur Login", "Échec de la connexion");
+        }
+    } else {
+        dialogError("Erreur", "Réponse inattendue du serveur: " + response);
+    }
+    return false;
+}
+
+bool MainWindowClientConsultationBooker::handleSearchResponse(const string& response)
+{
+    if (response.find(SEARCH_OK) == 0) {
+        // Vider la table actuelle
+        clearTableConsultations();
+        
+        // Parser les résultats
+        string data = response.substr(10); // Enlever "SEARCH_OK;"
+        
+        if (data.empty()) {
+            dialogMessage("Recherche", "Aucune consultation disponible pour ces critères");
+            return true;
+        }
+        
+        // Diviser par "|" pour obtenir chaque consultation
+        size_t pos = 0;
+        while (pos < data.length()) {
+            size_t nextPos = data.find('|', pos);
+            string consultation;
+            
+            if (nextPos == string::npos) {
+                consultation = data.substr(pos);
+                pos = data.length();
+            } else {
+                consultation = data.substr(pos, nextPos - pos);
+                pos = nextPos + 1;
+            }
+            
+            // Parser chaque consultation: ID;SPECIALTY;DOCTOR;DATE;HOUR
+            size_t pos1 = consultation.find(';');
+            size_t pos2 = consultation.find(';', pos1 + 1);
+            size_t pos3 = consultation.find(';', pos2 + 1);
+            size_t pos4 = consultation.find(';', pos3 + 1);
+            
+            if (pos1 != string::npos && pos2 != string::npos && pos3 != string::npos && pos4 != string::npos) {
+                int id = stoi(consultation.substr(0, pos1));
+                string specialty = consultation.substr(pos1 + 1, pos2 - pos1 - 1);
+                string doctor = consultation.substr(pos2 + 1, pos3 - pos2 - 1);
+                string date = consultation.substr(pos3 + 1, pos4 - pos3 - 1);
+                string hour = consultation.substr(pos4 + 1);
+                
+                addTupleTableConsultations(id, specialty, doctor, date, hour);
+            }
+        }
+        
+        dialogMessage("Recherche", "Recherche terminée - " + to_string(ui->tableWidgetConsultations->rowCount()) + " consultation(s) trouvée(s)");
+        return true;
+    } else if (response.find(SEARCH_FAIL) == 0) {
+        size_t pos = response.find(';');
+        if (pos != string::npos) {
+            string reason = response.substr(pos + 1);
+            dialogError("Erreur Recherche", "Échec de la recherche: " + reason);
+        } else {
+            dialogError("Erreur Recherche", "Échec de la recherche");
+        }
+    } else {
+        dialogError("Erreur", "Réponse inattendue du serveur: " + response);
+    }
+    return false;
+}
+
+void MainWindowClientConsultationBooker::loadSpecialties()
+{
+    if (!connectToServer()) return;
+    
+    if (sendToServer(GET_SPECIALTIES)) {
+        string response = receiveFromServer();
+        if (response.find(SPECIALTIES_OK) == 0) {
+            string data = response.substr(15); // Enlever "SPECIALTIES_OK;"
+            clearComboBoxSpecialties();
+            
+            // Ajouter l'option "--- TOUTES ---" en premier
+            addComboBoxSpecialties(TOUTES);
+            
+            size_t pos = 0;
+            while (pos < data.length()) {
+                size_t nextPos = data.find('|', pos);
+                string specialty;
+                
+                if (nextPos == string::npos) {
+                    specialty = data.substr(pos);
+                    pos = data.length();
+                } else {
+                    specialty = data.substr(pos, nextPos - pos);
+                    pos = nextPos + 1;
+                }
+                
+                addComboBoxSpecialties(specialty);
+            }
+        }
+    }
+}
+
+void MainWindowClientConsultationBooker::loadAllDoctors()
+{
+    if (!connectToServer()) return;
+    
+    if (sendToServer(string(GET_DOCTORS) + TOUS)) {
+        string response = receiveFromServer();
+        if (response.find(DOCTORS_OK) == 0) {
+            string data = response.substr(11); // Enlever "DOCTORS_OK;"
+            clearComboBoxDoctors();
+            
+            // Ajouter l'option "--- TOUS ---" en premier
+            addComboBoxDoctors("--- TOUS ---");
+            
+            size_t pos = 0;
+            while (pos < data.length()) {
+                size_t nextPos = data.find('|', pos);
+                string doctor;
+                
+                if (nextPos == string::npos) {
+                    doctor = data.substr(pos);
+                    pos = data.length();
+                } else {
+                    doctor = data.substr(pos, nextPos - pos);
+                    pos = nextPos + 1;
+                }
+                
+                addComboBoxDoctors(doctor);
+            }
+        }
+    }
+}
+
+void MainWindowClientConsultationBooker::loadDoctors()
+{
+    if (!connectToServer()) return;
+    
+    string specialty = getSelectionSpecialty();
+    if (specialty == TOUTES) specialty = TOUS;
+    
+    if (sendToServer(string(GET_DOCTORS) + specialty)) {
+        string response = receiveFromServer();
+        if (response.find(DOCTORS_OK) == 0) {
+            string data = response.substr(11); // Enlever "DOCTORS_OK;"
+            clearComboBoxDoctors();
+            
+            size_t pos = 0;
+            while (pos < data.length()) {
+                size_t nextPos = data.find('|', pos);
+                string doctor;
+                
+                if (nextPos == string::npos) {
+                    doctor = data.substr(pos);
+                    pos = data.length();
+                } else {
+                    doctor = data.substr(pos, nextPos - pos);
+                    pos = nextPos + 1;
+                }
+                
+                addComboBoxDoctors(doctor);
+            }
+        }
+    }
+}
+
+void MainWindowClientConsultationBooker::bookConsultation(int consultationId, const string& reason)
+{
+    if (!connectToServer()) return;
+    
+    int patientId = getPatientId();
+    string message = string(BOOK_CONSULTATION) + to_string(consultationId) + ";" + to_string(patientId) + ";" + reason;
+    
+    if (sendToServer(message)) {
+        string response = receiveFromServer();
+        if (!response.empty()) {
+            handleBookResponse(response);
+        }
+    }
+}
+
+bool MainWindowClientConsultationBooker::handleBookResponse(const string& response)
+{
+    if (response.find(BOOK_OK) == 0) {
+        dialogMessage("Réservation", "Consultation réservée avec succès !");
+        // Rafraîchir la liste des consultations
+        on_pushButtonRechercher_clicked();
+        return true;
+    } else if (response.find(BOOK_FAIL) == 0) {
+        size_t pos = response.find(';');
+        if (pos != string::npos) {
+            string reason = response.substr(pos + 1);
+            dialogError("Erreur Réservation", "Échec de la réservation: " + reason);
+        } else {
+            dialogError("Erreur Réservation", "Échec de la réservation");
+        }
+    } else {
+        dialogError("Erreur", "Réponse inattendue du serveur: " + response);
+    }
+    return false;
 }

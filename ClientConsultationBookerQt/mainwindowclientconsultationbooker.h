@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <string>
 using namespace std;
+#include "../socket/socket.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindowClientConsultationBooker; }
@@ -49,7 +50,24 @@ public:
     void dialogError(const string& title,const string& message);
     string dialogInputText(const string& title,const string& question);
     int dialogInputInt(const string& title,const string& question);
-
+    bool C_connectToServer = false; // Indicateur de connexion au serveur
+    int C_clientSocket = -1; // Socket client pour la communication avec le serveur
+    bool connectToServer();
+    
+    // Fonctions de communication avec le serveur
+    bool sendToServer(const string& message);
+    string receiveFromServer();
+    bool handleLoginResponse(const string& response);
+    
+    // Fonctions de recherche
+    bool handleSearchResponse(const string& response);
+    void loadSpecialties();
+    void loadDoctors();
+    void loadAllDoctors();
+    
+    // Fonctions de réservation
+    bool handleBookResponse(const string& response);
+    void bookConsultation(int consultationId, const string& reason);
 
 private slots:
     void on_pushButtonLogin_clicked();
