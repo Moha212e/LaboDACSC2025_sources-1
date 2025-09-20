@@ -7,6 +7,7 @@ const char* NOT_FOUND = "NOT_FOUND";
 const char* TOUTES = "--- TOUTES ---";
 const char* TOUS = "--- TOUS ---";
 
+
 // Messages de recherche
 const char* SEARCH = "SEARCH;";
 const char* SEARCH_FAIL = "SEARCH_FAIL;";
